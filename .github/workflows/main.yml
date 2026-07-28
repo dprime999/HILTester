@@ -1,0 +1,108 @@
+name: Flash Pico and STM32F4
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "blink.uf2"
+      - "blink2.elf"
+      - ".github/workflows/main.yml"
+
+  # Also allows you to start it manually from the Actions page.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Prevent two pushes from trying to use the programmers simultaneously.
+concurrency:
+  group: hil-hardware-flashing
+  cancel-in-progress: false
+
+jobs:
+  flash-hardware:
+    name: Flash Pico then STM32F4
+    runs-on: self-hosted
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out pushed files
+        uses: actions/checkout@v6
+
+      - name: Verify required files and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking firmware files..."
+          test -f "${GITHUB_WORKSPACE}/blink.uf2"
+          test -f "${GITHUB_WORKSPACE}/blink2.elf"
+
+          echo "Checking flashing tools..."
+          command -v picotool
+          command -v openocd
+
+          picotool version
+          openocd --version
+
+      - name: Copy firmware to Pi deployment directory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p /home/dprime999/hiltester
+
+          install -m 0644 \
+            "${GITHUB_WORKSPACE}/blink.uf2" \
+            /home/dprime999/hiltester/blink.uf2
+
+          install -m 0644 \
+            "${GITHUB_WORKSPACE}/blink2.elf" \
+            /home/dprime999/hiltester/blink2.elf
+
+          echo "Firmware copied to /home/dprime999/hiltester"
+          ls -lh \
+            /home/dprime999/hiltester/blink.uf2 \
+            /home/dprime999/hiltester/blink2.elf
+
+      - name: Flash Raspberry Pi Pico first
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Flashing Pico with blink.uf2..."
+
+          picotool load \
+            -f \
+            -v \
+            /home/dprime999/hiltester/blink.uf2
+
+          echo "Pico flashing completed successfully."
+
+      - name: Wait for USB devices to settle
+        shell: bash
+        run: sleep 3
+
+      - name: Flash STM32F4 second
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Flashing STM32F4 with blink2.elf..."
+
+          openocd \
+            -f interface/stlink.cfg \
+            -f target/stm32f4x.cfg \
+            -c "adapter speed 1800" \
+            -c "program /home/dprime999/hiltester/blink2.elf verify reset exit"
+
+          echo "STM32F4 flashing completed successfully."
+
+      - name: Deployment summary
+        shell: bash
+        run: |
+          echo "Hardware deployment completed."
+          echo "Pico firmware:   /home/dprime999/hiltester/blink.uf2"
+          echo "STM32F4 firmware: /home/dprime999/hiltester/blink2.elf"
+```
