@@ -94,7 +94,6 @@ jobs:
           openocd \
             -f interface/stlink.cfg \
             -f target/stm32f4x.cfg \
-            -c "adapter speed 1800" \
             -c "program /home/dprime999/hiltester/blink2.elf verify reset exit"
 
           echo "STM32F4 flashing completed successfully."
@@ -105,4 +104,3 @@ jobs:
           echo "Hardware deployment completed."
           echo "Pico firmware:   /home/dprime999/hiltester/blink.uf2"
           echo "STM32F4 firmware: /home/dprime999/hiltester/blink2.elf"
-```
