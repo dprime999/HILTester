@@ -25,14 +25,14 @@ jobs:
       - name: Check out pushed files
         uses: actions/checkout@v6
 
-      - name: Verify required files and tools
+      - name: Verify required source files and tools
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Checking firmware files..."
-          test -f "${GITHUB_WORKSPACE}/blink.c"
-          test -f "${GITHUB_WORKSPACE}/blink2.c"
+          echo "Checking firmware source..."
+          test -f "${GITHUB_WORKSPACE}/blink/blink.c"
+          test -f "${GITHUB_WORKSPACE}/blink2/CMakeLists.txt"
 
           echo "Checking flashing tools..."
           command -v picotool
@@ -41,25 +41,21 @@ jobs:
           picotool version
           openocd --version
 
-      - name: Build STM32 Project on Pi
+      - name: Configure and build Pico project
         shell: bash
         run: |
-          mkdir -p /home/dprime999/hiltester/stm32_build
-          cd /home/dprime999/hiltester/stm32_build
-          cmake ../one layer deeper? -DCMAKE_TOOLCHAIN_FILE=../arm-none-eabi-toolchain.cmake
-          cd ..
-          make -j$(nproc)
+          set -euo pipefail
+          cmake -S "${GITHUB_WORKSPACE}/blink" -B "${GITHUB_WORKSPACE}/blink/build"
+          cmake --build "${GITHUB_WORKSPACE}/blink/build" -j"$(nproc)"
 
-      - name: Build Pico Project on Pi
+      - name: Configure and build STM32 project
         shell: bash
         run: |
-          mkdir -p /home/dprime999/hiltester/pico_build
-          cd /home/dprime999/hiltester/pico_build
-          cmake ../one layer deeper? 
-          cd ..
-          make -j$(nproc)
+          set -euo pipefail
+          cmake -S "${GITHUB_WORKSPACE}/blink2" -B "${GITHUB_WORKSPACE}/blink2/build" \
+            -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/blink2/cmake/gcc-arm-none-eabi.cmake"
+          cmake --build "${GITHUB_WORKSPACE}/blink2/build" -j"$(nproc)"
 
-          
       - name: Flash Raspberry Pi Pico first
         shell: bash
         run: |
@@ -70,7 +66,7 @@ jobs:
           picotool load \
             -f \
             -v \
-            /home/dprime999/hiltester/blink.uf2
+            "${GITHUB_WORKSPACE}/blink/build/blink.uf2"
 
           echo "Pico flashing completed successfully."
 
@@ -88,7 +84,7 @@ jobs:
           openocd \
             -f interface/stlink.cfg \
             -f target/stm32f4x.cfg \
-            -c "program /home/dprime999/hiltester/blink2.elf verify reset exit"
+            -c "program ${GITHUB_WORKSPACE}/blink2/build/blink2.elf verify reset exit"
 
           echo "STM32F4 flashing completed successfully."
 
@@ -97,11 +93,10 @@ jobs:
         with:
           name: compiled-mcu-firmware
           path: |
-            build_pico/*.uf2
-            build_stm32/*.elf 
+            blink/build/blink.uf2
+            blink2/build/blink2.elf
 
       - name: Deployment summary
         shell: bash
         run: |
           echo "Hardware deployment completed."
-
