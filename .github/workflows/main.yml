@@ -2,12 +2,7 @@ name: Flash Pico and STM32F4
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - "blink.uf2"
-      - "blink2.elf"
-      - ".github/workflows/main.yml"
+    branches: [ "main" ]
 
   # Also allows you to start it manually from the Actions page.
   workflow_dispatch:
@@ -36,8 +31,8 @@ jobs:
           set -euo pipefail
 
           echo "Checking firmware files..."
-          test -f "${GITHUB_WORKSPACE}/blink.uf2"
-          test -f "${GITHUB_WORKSPACE}/blink2.elf"
+          test -f "${GITHUB_WORKSPACE}/blink.c"
+          test -f "${GITHUB_WORKSPACE}/blink2.c"
 
           echo "Checking flashing tools..."
           command -v picotool
@@ -46,26 +41,25 @@ jobs:
           picotool version
           openocd --version
 
-      - name: Copy firmware to Pi deployment directory
+      - name: Build STM32 Project on Pi
         shell: bash
         run: |
-          set -euo pipefail
+          mkdir -p /home/dprime999/hiltester/stm32_build
+          cd /home/dprime999/hiltester/stm32_build
+          cmake ../one layer deeper? -DCMAKE_TOOLCHAIN_FILE=../arm-none-eabi-toolchain.cmake
+          cd ..
+          make -j$(nproc)
 
-          mkdir -p /home/dprime999/hiltester
+      - name: Build Pico Project on Pi
+        shell: bash
+        run: |
+          mkdir -p /home/dprime999/hiltester/pico_build
+          cd /home/dprime999/hiltester/pico_build
+          cmake ../one layer deeper? 
+          cd ..
+          make -j$(nproc)
 
-          install -m 0644 \
-            "${GITHUB_WORKSPACE}/blink.uf2" \
-            /home/dprime999/hiltester/blink.uf2
-
-          install -m 0644 \
-            "${GITHUB_WORKSPACE}/blink2.elf" \
-            /home/dprime999/hiltester/blink2.elf
-
-          echo "Firmware copied to /home/dprime999/hiltester"
-          ls -lh \
-            /home/dprime999/hiltester/blink.uf2 \
-            /home/dprime999/hiltester/blink2.elf
-
+          
       - name: Flash Raspberry Pi Pico first
         shell: bash
         run: |
@@ -98,9 +92,16 @@ jobs:
 
           echo "STM32F4 flashing completed successfully."
 
+      - name: Upload All Compiled Firmware to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-mcu-firmware
+          path: |
+            build_pico/*.uf2
+            build_stm32/*.elf 
+
       - name: Deployment summary
         shell: bash
         run: |
           echo "Hardware deployment completed."
-          echo "Pico firmware:   /home/dprime999/hiltester/blink.uf2"
-          echo "STM32F4 firmware: /home/dprime999/hiltester/blink2.elf"
+
