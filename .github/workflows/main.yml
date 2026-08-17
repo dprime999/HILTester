@@ -20,6 +20,9 @@ jobs:
     name: Flash Pico then STM32F4
     runs-on: self-hosted
     timeout-minutes: 15
+    env:
+      PICO_SDK_PATH: /home/dprime999/pico/pico/pico-sdk
+
 
     steps:
       - name: Check out pushed files
