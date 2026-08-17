@@ -35,7 +35,7 @@ jobs:
 
           echo "Checking firmware source..."
           test -f "${GITHUB_WORKSPACE}/blink/blink.c"
-          test -f "${GITHUB_WORKSPACE}/blink2/CMakeLists.txt"
+          test -f "${GITHUB_WORKSPACE}/blink2/Core/Src/main.c"
 
           echo "Checking flashing tools..."
           command -v picotool
