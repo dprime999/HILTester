@@ -1,0 +1,166 @@
+TODO:
+
+Dockerize for deploy,
+
+deploy as downloadable executable, inaddition to clone repo ig
+
+webserver?, gui frontend, tie to logic analyzer/verification, sigrok cli parsing csv and sampling. uart and i2c
+
+scale to multiple devices
+printing connections to gui front end, grep with lsusb
+
+----------------------
+
+make a run script that make it so you can start if form the terminal at execution, with the config files as args
+
+-------------------------------------------------------------------------------------------------------------
+
+Here are all the completed files you need to add to the root directory of your repository, followed by a copy-and-paste guide for your README.md.File 1: DockerfileThis builds the environment. It installs the ARM compiler tools for your C code and packages the official GitHub runner software.dockerfileFROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install ARM compiler tools, curl, and jq (needed for the entrypoint script)
+RUN apt-get update && apt-get install -y \
+    gcc-arm-none-eabi \
+    binutils-arm-none-eabi \
+    libnewlib-arm-none-eabi \
+    make \
+    cmake \
+    curl \
+    jq \
+    git \
+    sudo \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user (GitHub runner software requires this)
+RUN useradd -m runner && usermod -aG sudo runner && echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+USER runner
+WORKDIR /home/runner
+
+# Download and extract the official GitHub Actions runner application
+RUN mkdir actions-runner && cd actions-runner \
+    && curl -o actions-runner-linux-x64-2.317.0.tar.gz -L https://github.com \
+    && tar xzf ./actions-runner-linux-x64-2.317.0.tar.gz \
+    && rm actions-runner-linux-x64-2.317.0.tar.gz
+
+# Copy the dynamic startup script into the container
+COPY --chown=runner:runner entrypoint.sh /home/runner/actions-runner/entrypoint.sh
+RUN chmod +x /home/runner/actions-runner/entrypoint.sh
+
+WORKDIR /home/runner/actions-runner
+
+# When the container spins up, launch the entrypoint script
+ENTRYPOINT ["./entrypoint.sh"]
+Use code with caution.File 2: entrypoint.shThis handles the automatic setup when the container starts and the automatic removal when the container stops.bash#!/bin/bash
+set -e
+
+# 1. Ensure the user provided their repository and GitHub token
+if [ -z "$GH_REPO" ] || [ -z "$GH_TOKEN" ]; then
+  echo "Error: GH_REPO (e.g., owner/repo) and GH_TOKEN are required."
+  exit 1
+fi
+
+# Extract owner and repo names
+OWNER=$(echo "$GH_REPO" | cut -d'/' -f1)
+REPO=$(echo "$GH_REPO" | cut -d'/' -f2)
+
+# 2. Define the cleanup function
+cleanup() {
+  echo "Stopping container detected! Fetching removal token from GitHub..."
+  
+  # Fetch a short-lived removal token from GitHub API
+  REMOVE_TOKEN=$(curl -s -X POST \
+    -H "Authorization: token $GH_TOKEN" \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://github.com" | jq -r '.token')
+  
+  if [ "$REMOVE_TOKEN" != "null" ] && [ -n "$REMOVE_TOKEN" ]; then
+    echo "Unregistering runner from GitHub..."
+    ./config.sh remove --token "$REMOVE_TOKEN"
+    echo "Runner successfully removed from GitHub."
+  else
+    echo "Warning: Could not fetch removal token. You may need to delete it manually from GitHub UI."
+  fi
+}
+
+# 3. Tell the script to execute the cleanup function when Docker stops the container
+trap 'cleanup' SIGINT SIGTERM
+
+echo "Registering runner for $OWNER/$REPO..."
+
+# 4. Call GitHub API to get a registration token
+REG_TOKEN=$(curl -s -X POST \
+  -H "Authorization: token $GH_TOKEN" \
+  -H "Accept: application/vnd.github.v3+json" \
+  "https://github.com" | jq -r '.token')
+
+if [ "$REG_TOKEN" = "null" ] || [ -z "$REG_TOKEN" ]; then
+  echo "Error: Failed to fetch registration token from GitHub. Check your GH_TOKEN permissions."
+  exit 1
+fi
+
+# 5. Configure the runner automatically
+./config.sh --url "https://github.com" --token "$REG_TOKEN" --name "docker-runner-$(hostname)" --unattended --replace
+
+# 6. Start the runner in the foreground so it stays alive and waits for the trap signal
+echo "Starting GitHub Runner..."
+./run.sh &
+PID=$!
+
+# Wait for the runner process to finish (or for a shutdown signal to trigger the trap)
+wait $PID
+Use code with caution.File 3: docker-compose.ymlThis simplifies the setup so users can run a single command without memorizing environment flags.yamlversion: '3.8'
+
+services:
+  github-runner:
+    build: .
+    container_name: stm32-github-runner
+    restart: always
+    environment:
+      - GH_REPO=your-github-username/your-repo-name
+      - GH_TOKEN=ghp_yourActualGitHubTokenHere
+Use code with caution.Copy-and-Paste Usage Guide for your README.mdmarkdown## 🚀 Automated Self-Hosted GitHub Runner
+
+This project includes a turnkey, Dockerized GitHub Actions runner. It comes pre-packaged with the ARM compiler toolchain (`gcc-arm-none-eabi`, `make`, `cmake`) so you can compile C code automatically inside your own GitHub repository without installing tools on your computer.
+
+### Prerequisites
+* [Docker Desktop](https://docker.com) installed and running.
+* A GitHub **Personal Access Token (Classic)** with the `repo` scope selected. You can generate one in your GitHub profile under **Settings > Developer Settings > Personal access tokens**.
+
+### Quick Start Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone <your-repo-url>
+   cd <your-repo-folder>
+   ```
+
+2. **Configure your credentials:**
+   Open the `docker-compose.yml` file in a text editor. Replace the placeholders with your own repository details and GitHub token:
+   ```yaml
+   environment:
+     - GH_REPO=your-github-username/your-repo-name
+     - GH_TOKEN=ghp_yourActualGitHubTokenHere
+   ```
+
+3. **Launch the runner:**
+   Run the following command to build the compiler environment and spin up the runner in the background:
+   ```bash
+   docker compose up -d
+   ```
+
+Your runner will automatically register itself with your GitHub repository, execute `./run.sh`, and change its status to **Idle (Online)** in your repository's **Settings > Actions > Runners** dashboard. It is now completely ready to compile your pushed C code.
+
+### Useful Commands
+
+* **View live logs / connection status:**
+  ```bash
+  docker compose logs -f
+  ```
+* **Stop and cleanly remove the runner:**
+  ```bash
+  docker compose down
+  ```
+  *(Stopping the container triggers an automatic cleanup routine that deletes th

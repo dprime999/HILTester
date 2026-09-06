@@ -1,0 +1,10 @@
+TODO:
+
+Drivers for usb/uart, i2c, including their respective read and writes, buffers etc
+Register file
+
+Main, using send and recv to do stuff
+
+send and recv calling the dirver code,
+
+for pico, main, fault injection example, drivers/r/w's for understanding commsRUST?

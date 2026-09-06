@@ -1,0 +1,7 @@
+{
+  "device_name": "FaultInjector_Pico",
+  "device_model": "Raspberry Pi Pico",
+  "unique_id": 1,
+  "mode": 1,
+  "mode_description": "fault_injection_mode"
+}

@@ -1,0 +1,72 @@
+{
+  "_entry_schema": {
+    "input": "value or object sent to the DUT for this test (register addr, value, command byte, etc)",
+    "expected_output": "value the DUT should return when everything is working normally",
+    "fault_expected_output": "value/status the DUT should return IF fault_injection is true for this test_code (e.g. NACK, error code, timeout flag) - null when fault_injection is false in test_map.json",
+    "timeout_ms": "int - max time to wait for this specific test's result before flagging a timeout failure"
+  },
+  "expectations": {
+    "1": {
+      "input": {
+        "register": "0x10",
+        "value": "0b10"
+      },
+      "expected_output": {
+        "ack": true
+      },
+      "fault_expected_output": null,
+      "timeout_ms": 200
+    },
+    "2": {
+      "input": {
+        "register": "0x10"
+      },
+      "expected_output": {
+        "value": "0b10"
+      },
+      "fault_expected_output": null,
+      "timeout_ms": 200
+    },
+    "3": {
+      "input": {
+        "register": "0x10"
+      },
+      "expected_output": null,
+      "fault_expected_output": {
+        "status": "nack_detected"
+      },
+      "timeout_ms": 300
+    },
+    "4": {
+      "input": {
+        "command": "report_status"
+      },
+      "expected_output": {
+        "status": "ok"
+      },
+      "fault_expected_output": null,
+      "timeout_ms": 200
+    },
+    "5": {
+      "input": {
+        "command": "0x01"
+      },
+      "expected_output": {
+        "ack": true
+      },
+      "fault_expected_output": null,
+      "timeout_ms": 200
+    },
+    "6": {
+      "input": {
+        "command": "run_all"
+      },
+      "expected_output": {
+        "status": "pass",
+        "subtests_passed": 5
+      },
+      "fault_expected_output": null,
+      "timeout_ms": 1000
+    }
+  }
+}
