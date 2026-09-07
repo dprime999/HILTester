@@ -26,3 +26,6 @@ build.ninja
 # OS junk
 .DS_Store
 Thumbs.db
+
+#for PAT
+.env
