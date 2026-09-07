@@ -2,7 +2,9 @@ name: Flash Pico and STM32F4
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
+      - feature/docker-hil-runner
 
   # Also allows you to start it manually from the Actions page.
   workflow_dispatch:
