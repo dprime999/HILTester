@@ -18,11 +18,13 @@ concurrency:
 jobs:
   flash-hardware:
     name: Flash Pico then STM32F4
-    runs-on: self-hosted
-    timeout-minutes: 15
-    env:
-      PICO_SDK_PATH: /home/dprime999/pico/pico/pico-sdk
 
+    runs-on: [self-hosted, hil]
+
+    timeout-minutes: 15
+
+    env:
+      PICO_SDK_PATH: /opt/pico-sdk
 
     steps:
       - name: Check out pushed files
@@ -48,16 +50,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S "${GITHUB_WORKSPACE}/blink" -B "${GITHUB_WORKSPACE}/blink/build"
-          cmake --build "${GITHUB_WORKSPACE}/blink/build" -j"$(nproc)"
+
+          cmake \
+            -S "${GITHUB_WORKSPACE}/blink" \
+            -B "${GITHUB_WORKSPACE}/blink/build"
+
+          cmake \
+            --build "${GITHUB_WORKSPACE}/blink/build" \
+            -j"$(nproc)"
 
       - name: Configure and build STM32 project
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S "${GITHUB_WORKSPACE}/blink2" -B "${GITHUB_WORKSPACE}/blink2/build" \
+
+          cmake \
+            -S "${GITHUB_WORKSPACE}/blink2" \
+            -B "${GITHUB_WORKSPACE}/blink2/build" \
             -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/blink2/cmake/gcc-arm-none-eabi.cmake"
-          cmake --build "${GITHUB_WORKSPACE}/blink2/build" -j"$(nproc)"
+
+          cmake \
+            --build "${GITHUB_WORKSPACE}/blink2/build" \
+            -j"$(nproc)"
 
       - name: Flash Raspberry Pi Pico first
         shell: bash
@@ -103,3 +117,4 @@ jobs:
         shell: bash
         run: |
           echo "Hardware deployment completed."
+
