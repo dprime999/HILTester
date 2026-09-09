@@ -1,0 +1,16 @@
+TODO:
+
+Dockerize for deploy,
+
+deploy as downloadable executable, inaddition to clone repo ig
+
+webserver?, gui frontend, tie to logic analyzer/verification, sigrok cli parsing csv and sampling. uart and i2c
+
+scale to multiple devices
+printing connections to gui front end, grep with lsusb
+
+----------------------
+
+make a run script that make it so you can start if form the terminal at execution, with the config files as args
+
+-------------------------------------------------------------------------------------------------------------
