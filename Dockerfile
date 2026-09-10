@@ -27,6 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ninja-build \
     openocd \
     pkg-config \
+    python3 \
+    python3-pip \
     sudo \
     tar \
     && rm -rf /var/lib/apt/lists/*
