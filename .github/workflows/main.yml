@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - docker-hil-runner
+      - docker-HILTester
 
   # Also allows you to start it manually from the Actions page.
   workflow_dispatch:

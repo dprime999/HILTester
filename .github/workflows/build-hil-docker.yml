@@ -5,7 +5,7 @@ on:
   # Docker/infrastructure files change on this branch.
   push:
     branches:
-      - docker-hil-runner
+      - docker-HILTester
     paths:
       - "Dockerfile"
       - "entrypoint.sh"
