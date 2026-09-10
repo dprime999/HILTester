@@ -1,13 +1,10 @@
+
 services:
   github-runner:
-    build:
-      context: .
-      args:
-        RUNNER_VERSION: "2.337.0"
-        PICO_SDK_VERSION: "2.3.0"
-        PICOTOOL_VERSION: "2.3.0"
+    image: ghcr.io/dprime999/hiltester-runner:latest
 
-    image: hil-runner:local
+    # Check GHCR whenever Compose starts this service.
+    pull_policy: always
 
     container_name: stm32-hil-runner
 
@@ -17,10 +14,11 @@ services:
       GH_REPO: "${GH_REPO}"
       GH_TOKEN: "${GH_TOKEN}"
       RUNNER_NAME: "${RUNNER_NAME:-pi5-hil-runner}"
-      RUNNER_LABELS: "${RUNNER_LABELS:-hil,docker}"
+      RUNNER_LABELS: "${RUNNER_LABELS:-hil,docker,pi5}"
 
     volumes:
       - /dev/bus/usb:/dev/bus/usb
 
     device_cgroup_rules:
       - "c 189:* rmw"
+
