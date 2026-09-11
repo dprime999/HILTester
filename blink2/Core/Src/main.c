@@ -107,7 +107,7 @@ int main(void)
   while (1)
   {
     BSP_LED_Toggle(LED2);
-    HAL_Delay(103);
+    HAL_Delay(104);
   }
   /* USER CODE END 3 */
 }
