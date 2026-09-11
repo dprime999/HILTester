@@ -82,7 +82,7 @@ jobs:
 
           echo "Flashing Pico with blink.uf2..."
 
-          picotool load \
+          sudo picotool load \
             -f \
             -v \
             "${GITHUB_WORKSPACE}/blink/build/blink.uf2"
