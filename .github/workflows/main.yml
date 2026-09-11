@@ -80,10 +80,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "Rebooting running Pico into BOOTSEL..."
+
+          sudo picotool reboot -f -u
+
+          echo "Waiting for Pico BOOTSEL USB device..."
+          sleep 3
+
           echo "Flashing Pico with blink.uf2..."
 
           sudo picotool load \
-            -f \
             -v \
             -x \
             "${GITHUB_WORKSPACE}/blink/build/blink.uf2"
