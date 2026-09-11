@@ -42,6 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git clone \
         --branch "${PICO_SDK_VERSION}" \
         --depth 1 \
+        --recurse-submodules \
+        --shallow-submodules \
         https://github.com/raspberrypi/pico-sdk.git \
         /opt/pico-sdk \
     && git clone \
