@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 15
 
     env:
-      PICO_SDK_PATH: /opt/pico-sdk
+      PICO_SDK_PATH: /home/runner/pico/pico-sdk
 
     steps:
       - name: Check out pushed files

@@ -3,11 +3,12 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 ARG RUNNER_VERSION=2.337.0
-ARG PICO_SDK_VERSION=2.3.0
-ARG PICOTOOL_VERSION=2.3.0
 
 # ------------------------------------------------------------
 # Base development + HIL dependencies
+#
+# STM32 toolchain stays explicit here so the STM32 build/flash
+# environment remains guaranteed regardless of pico_setup.sh.
 # ------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
@@ -31,35 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     sudo \
     tar \
+    usbutils \
+    wget \
     && rm -rf /var/lib/apt/lists/*
-
-# ------------------------------------------------------------
-# Build + install picotool 2.3.0
-#
-# Ubuntu 24.04 does not provide the current picotool package,
-# so build it once into this Docker image.
-# ------------------------------------------------------------
-RUN git clone \
-        --branch "${PICO_SDK_VERSION}" \
-        --depth 1 \
-        --recurse-submodules \
-        --shallow-submodules \
-        https://github.com/raspberrypi/pico-sdk.git \
-        /opt/pico-sdk \
-    && git clone \
-        --branch "${PICOTOOL_VERSION}" \
-        --depth 1 \
-        https://github.com/raspberrypi/picotool.git \
-        /tmp/picotool \
-    && cmake \
-        -S /tmp/picotool \
-        -B /tmp/picotool-build \
-        -G Ninja \
-        -DPICO_SDK_PATH=/opt/pico-sdk \
-        -DCMAKE_BUILD_TYPE=Release \
-    && cmake --build /tmp/picotool-build \
-    && cmake --install /tmp/picotool-build \
-    && rm -rf /tmp/picotool /tmp/picotool-build
 
 # ------------------------------------------------------------
 # Create non-root GitHub Actions runner user
@@ -69,11 +44,36 @@ RUN useradd --create-home --shell /bin/bash runner \
     && chmod 0440 /etc/sudoers.d/runner
 
 # ------------------------------------------------------------
+# Raspberry Pi Pico setup
+#
+# Use Raspberry Pi's setup script instead of manually cloning
+# and assembling the Pico SDK + picotool stack ourselves.
+#
+# Run as the runner user so user-local Pico files live under
+# /home/runner, similar to your old working host setup.
+# ------------------------------------------------------------
+USER runner
+WORKDIR /home/runner
+
+RUN wget \
+        https://raw.githubusercontent.com/raspberrypi/pico-setup/master/pico_setup.sh \
+        -O /home/runner/pico_setup.sh \
+    && chmod +x /home/runner/pico_setup.sh \
+    && /home/runner/pico_setup.sh
+
+# ------------------------------------------------------------
+# Pico SDK location created by pico_setup.sh
+# ------------------------------------------------------------
+ENV PICO_SDK_PATH=/home/runner/pico/pico-sdk
+
+# ------------------------------------------------------------
 # Download correct GitHub Actions runner for this architecture.
 #
-# Pi 5 / 64-bit Raspberry Pi OS = arm64
+# Raspberry Pi 5 / 64-bit Raspberry Pi OS = arm64
 # Typical desktop/server Linux = amd64 -> x64 package
 # ------------------------------------------------------------
+USER root
+
 RUN mkdir -p /home/runner/actions-runner \
     && ARCH="$(dpkg --print-architecture)" \
     && case "${ARCH}" in \
