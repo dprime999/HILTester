@@ -1,0 +1,24 @@
+
+services:
+  github-runner:
+    image: ghcr.io/dprime999/hiltester-runner:latest
+
+    # Check GHCR whenever Compose starts this service.
+    pull_policy: always
+
+    container_name: stm32-hil-runner
+
+    restart: unless-stopped
+
+    environment:
+      GH_REPO: "${GH_REPO}"
+      GH_TOKEN: "${GH_TOKEN}"
+      RUNNER_NAME: "${RUNNER_NAME:-pi5-hil-runner}"
+      RUNNER_LABELS: "${RUNNER_LABELS:-hil,docker,pi5}"
+
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+
+    device_cgroup_rules:
+      - "c 189:* rmw"
+

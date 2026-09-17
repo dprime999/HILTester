@@ -49,7 +49,8 @@ endif()
 pico_enable_stdio_usb(blink 1)
 pico_enable_stdio_uart(blink 0)
 
-# create map/bin/hex file etc.
-pico_add_extra_outputs(blink)
+target_compile_definitions(blink PRIVATE
+    PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
+)
 
-# add url via pico_set_program_url
+pico_add_extra_outputs(blink)

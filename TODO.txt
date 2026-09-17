@@ -14,6 +14,7 @@ printing connections to gui front end, grep with lsusb
 make a run script that make it so you can start if form the terminal at execution, with the config files as args
 
 -------------------------------------------------------------------------------------------------------------
+<<<<<<< HEAD
 
 Here are all the completed files you need to add to the root directory of your repository, followed by a copy-and-paste guide for your README.md.File 1: DockerfileThis builds the environment. It installs the ARM compiler tools for your C code and packages the official GitHub runner software.dockerfileFROM ubuntu:24.04
 
@@ -164,3 +165,5 @@ Your runner will automatically register itself with your GitHub repository, exec
   docker compose down
   ```
   *(Stopping the container triggers an automatic cleanup routine that deletes th
+=======
+>>>>>>> docker-HILTester
