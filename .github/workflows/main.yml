@@ -107,7 +107,7 @@ jobs:
 
           echo "Flashing STM32F4 with blink2.elf..."
 
-          openocd \
+          sudo openocd \
             -f interface/stlink.cfg \
             -f target/stm32f4x.cfg \
             -c "program ${GITHUB_WORKSPACE}/blink2/build/blink2.elf verify reset exit"
