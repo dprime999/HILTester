@@ -1,0 +1,4 @@
+| Category | Recommended Tech / Library | Purpose in your HIL Project |
+|---|---|---|
+| Public Distribution | GitHub Releases + Inno Setup | Packages your compiled app into a downloadable installer with desktop shortcuts. |
+| App Packaging | PyInstaller | Compiles your Python TUI script into a standalone Windows .exe. |

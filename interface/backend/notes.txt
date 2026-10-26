@@ -1,0 +1,35 @@
+notes for whole testing process, ongoing
+
+1. Clean with the new script, run full deprovision.
+2. reprovision with run all deploy-test mode
+
+3. if both pass then we can move on, compile these commands into a top-level script. where test runs involve cleaning first
+4. further testing of commands is ok
+
+Test A:
+python interface/backend/clean.py --project demo --repo dprime999/HILStarter --pi-all --dry-run
+python interface/backend/clean.py --project demo --repo dprime999/HILStarter --pi-all --reset-progress
+python interface/backend/run_all.py deploy
+
+This removes the HILTester runner/container/deployment checkout,
+but preserves Raspberry Pi OS, Docker, SSH, Tailscale and the GitHub repo. 
+Answer **yes** to the existing-Pi/existing-repo questions.
+
+Test B:
+python interface/backend/clean.py --project demo --repo dprime999/HILStarter --pi-all --github-clean --reset-progress --dry-run
+python interface/backend/clean.py --project demo --repo dprime999/HILStarter --pi-all --github-clean --reset-progress
+ssh -i "$env:USERPROFILE\.hiltester\projects\demo\ssh\id_ed25519" dprime999@100.109.225.63 "sudo shutdown -h now"
+(pull out, insert to local)
+python interface/backend/run_all.py deploy-test
+
+During the prompts:
+- Existing Pi? No.
+- GitHub already populated? No — you cleared its tracked files.
+- USB disk? Select the SanDisk drive and confirm ERASE.
+- After flashing? Move the drive back to the Pi, connect the MCUs, and power it on.
+- Hardware scan? Select the Pico and ST-LINK devices.
+- Actions test? Confirm when the targets are ready.
+
+Total system (and repo destruction):
+python interface/backend/clean.py --project demo --total-deprovision --dry-run
+python interface/backend/clean.py --project demo --total-deprovision --github-clean

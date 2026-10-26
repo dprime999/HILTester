@@ -1,0 +1,7 @@
+{
+  "device_name": "DUT_STM32",
+  "device_model": "STM32F103C8T6",
+  "unique_id": 1,
+  "mode": 0,
+  "mode_description": "run_all_tests"
+}

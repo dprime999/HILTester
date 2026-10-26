@@ -291,22 +291,22 @@ class ProjectHubScreen(Screen):
 
                 yield from self._navigation_item(
                     2,
-                    "Host & Target Network Commissioning",
-                    "Configure Pi connectivity and network access.",
+                    "Pi & Network Setup",
+                    "Configure Raspberry Pi connectivity and remote access.",
                     "network",
                 )
 
                 yield from self._navigation_item(
                     3,
-                    "Source Control & GitHub OAuth",
-                    "Connect GitHub and prepare the HILTester workspace.",
+                    "Source Control & GitHub",
+                    "Select and verify the deployment repository.",
                     "github",
                 )
 
                 yield from self._navigation_item(
                     4,
-                    "Advanced Hardware Topology",
-                    "Define the physical hardware configuration.",
+                    "Hardware Topology",
+                    "Discover and confirm connected HIL hardware.",
                     "topology",
                 )
 
@@ -434,6 +434,9 @@ class ConfirmableProjectScreen(BaseHILScreen):
     These screens must be confirmed before deployment.
     """
 
+    ACTION_LABEL = None
+    ACTION_ID = None
+
     def compose(self) -> ComposeResult:
         yield from self.compose_header()
 
@@ -443,6 +446,13 @@ class ConfirmableProjectScreen(BaseHILScreen):
 
             with Container(classes="placeholder-panel"):
                 yield Static(self.placeholder_text())
+
+            if self.ACTION_LABEL and self.ACTION_ID:
+                yield Button(
+                    self.ACTION_LABEL,
+                    id=self.ACTION_ID,
+                    variant="primary",
+                )
 
             confirmed = self.project.confirmations[
                 self.SCREEN_NUMBER
@@ -491,8 +501,10 @@ class ConfirmableProjectScreen(BaseHILScreen):
 
 class NetworkScreen(ConfirmableProjectScreen):
     SCREEN_NUMBER = 2
-    SCREEN_NAME = "Host & Target Network Commissioning"
-    DESCRIPTION = "Connect the HIL host to the Raspberry Pi."
+    SCREEN_NAME = "Pi & Network Setup"
+    DESCRIPTION = "Configure Raspberry Pi connectivity and remote access."
+    ACTION_LABEL = "Check Connection"
+    ACTION_ID = "check_connection"
 
     def placeholder_text(self) -> str:
         return """
@@ -505,15 +517,21 @@ Tailscale:
 [yellow]● Not Checked[/yellow]
 
 Target Raspberry Pi:
+[dim]● Not discovered[/dim]
+
+Tailscale IP:
 [dim]Not discovered[/dim]
+
+SSH:
+[yellow]● Not checked[/yellow]
 
 ────────────────────────────
 
 Future functionality:
 • Network adapter discovery
-• Ping / mDNS scan
-• Tailscale fallback
-• Target IP selection
+• Tailscale device discovery
+• Tailscale IP discovery
+• SSH connectivity test
 """
 
 
@@ -524,29 +542,30 @@ Future functionality:
 
 class GitHubScreen(ConfirmableProjectScreen):
     SCREEN_NUMBER = 3
-    SCREEN_NAME = "Source Control & GitHub OAuth"
-    DESCRIPTION = "Connect the workstation to the HILTester repository."
+    SCREEN_NAME = "Source Control & GitHub"
+    DESCRIPTION = "Select and verify the HILTester repository."
+    ACTION_LABEL = "Verify Repository"
+    ACTION_ID = "verify_repository"
 
     def placeholder_text(self) -> str:
         return """
-[b]GitHub Workspace[/b]
-
-Authentication:
-[yellow]● Not Connected[/yellow]
+[b]GitHub Repository[/b]
 
 Repository:
 dprime999/HILTester
 
-Local Workspace:
-[dim]Not checked[/dim]
+Branch:
+Default
+
+Access:
+[yellow]● Not Checked[/yellow]
 
 ────────────────────────────
 
 Future functionality:
-• GitHub Device Flow
+• Verify repository access
+• Discover default branch
 • Repository clone/update
-• Environment configuration
-• Secret-safe .env setup
 """
 
 
@@ -557,26 +576,30 @@ Future functionality:
 
 class TopologyScreen(ConfirmableProjectScreen):
     SCREEN_NUMBER = 4
-    SCREEN_NAME = "Advanced Hardware Topology"
-    DESCRIPTION = "Configure the physical HIL testing architecture."
+    SCREEN_NAME = "Hardware Topology"
+    DESCRIPTION = "Discover and confirm connected HIL hardware."
+    ACTION_LABEL = "Scan Hardware"
+    ACTION_ID = "scan_hardware"
 
     def placeholder_text(self) -> str:
         return """
-[b]Hardware Topology[/b]
+[b]Hardware Discovery[/b]
 
-Raspberry Pi
-    └── USB Hub
-        ├── Raspberry Pi Pico
-        └── STM32 DUT
+Expected Hardware:
+[dim]No hardware profile saved.[/dim]
+
+────────────────────────────
+
+Connected USB Devices:
+[dim]Run a scan to discover hardware.[/dim]
 
 ────────────────────────────
 
 Future functionality:
-• Add/remove devices
-• Multiple Pico targets
-• Multiple STM32 DUTs
-• USB hub configuration
-• Import topology.json
+• Scan connected USB devices
+• Display discovered VID/PID automatically
+• Save selected devices as the expected rig
+• Rescan and verify saved hardware
 """
 
 
@@ -602,9 +625,11 @@ class DeployScreen(BaseHILScreen):
                     "[b]Deployment Pipeline[/b]\n\n"
                     "○ Connect to Pi via SSH\n"
                     "○ Verify Docker\n"
-                    "○ Validate USB hardware\n"
-                    "○ Pull HILTester container\n"
-                    "○ Launch runtime"
+                    "○ Clone / update repository\n"
+                    "○ Find Docker Compose configuration\n"
+                    "○ Pull container image\n"
+                    "○ Launch runtime\n"
+                    "○ Verify container status"
                 )
 
                 yield ProgressBar(
@@ -614,7 +639,7 @@ class DeployScreen(BaseHILScreen):
                 )
 
             yield Button(
-                "Simulate Successful Deployment",
+                "Deploy HILTester",
                 id="complete_deploy",
                 variant="success",
             )

@@ -1,1 +1,0 @@
-#takes setup data from either the installation, or setup screen and makes .env file then uses dotenv to get the info securely

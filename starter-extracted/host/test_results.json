@@ -1,0 +1,28 @@
+{
+  "_result_entry_schema": {
+    "test_code": "int - matches code in test_map.json",
+    "test_name": "string - matches name in test_map.json",
+    "function_slot": "string - one of: main, i2c_write, i2c_read, uart_read, uart_write",
+    "input": "value or object sent to the DUT for this test",
+    "expected_output": "value pulled from expectations.json at run time",
+    "actual_output": "value returned by the DUT over UART",
+    "pass": "bool - actual_output == expected_output",
+    "latency_ms": "float - time between command sent and result received",
+    "fault_injected": "bool - whether the Pico was told to misbehave for this test"
+  },
+  "test_run_id": null,
+  "timestamp": null,
+  "dut": {
+    "device_name": null,
+    "device_model": null,
+    "unique_id": null,
+    "mode": null
+  },
+  "fault_injector": {
+    "device_name": null,
+    "device_model": null,
+    "unique_id": null,
+    "mode": null
+  },
+  "results": []
+}

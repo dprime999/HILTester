@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "name": "HILTester Pi 5 - Pico + STM32F4",
+  "controller": {
+    "name": "Raspberry Pi 5",
+    "role": "host",
+    "os": "Raspberry Pi OS Lite (64-bit)",
+    "network": "Tailscale and SSH"
+  },
+  "boot_storage": {
+    "name": "SanDisk USB boot drive",
+    "role": "boot_storage",
+    "connection": "Windows PC for flashing; Raspberry Pi 5 USB port for boot",
+    "expected_transport": "usb",
+    "model_contains": "SanDisk",
+    "required": true
+  },
+  "usb_hardware": [
+    {
+      "id": "stlink",
+      "name": "STM32F4 via ST-LINK programmer",
+      "connection": "ST-LINK USB -> Raspberry Pi 5 USB; ST-LINK SWD -> STM32F4",
+      "usb_vid": "0483",
+      "usb_pids": ["3748", "374b", "374e", "374f", "3752", "3753"],
+      "description_contains": "ST-LINK",
+      "required": true,
+      "note": "Actual ST-LINK PID depends on programmer model. Adjust after checking lsusb."
+    },
+    {
+      "id": "pico",
+      "name": "Raspberry Pi Pico (RP2040)",
+      "connection": "Pico USB -> Raspberry Pi 5 USB (directly or through USB hub)",
+      "usb_vid": "2e8a",
+      "usb_pids": ["0003", "000a", "000f"],
+      "description_contains": "Pico",
+      "required": false,
+      "note": "Pico USB IDs depend on BOOTSEL/application firmware. Blink firmware may not enumerate at all; warn rather than falsely failing verification."
+    }
+  ],
+  "usb_hub": {
+    "allowed": true,
+    "required": false,
+    "connection": "Optional USB hub -> Raspberry Pi 5 USB port; boot drive, ST-LINK and Pico may connect through it"
+  }
+}

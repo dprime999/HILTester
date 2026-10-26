@@ -242,6 +242,30 @@ Footer {
     margin-right: 1;
 }
 
+.backend-status {
+    height: auto;
+    padding: 1 2;
+    margin: 1 0;
+    border: round $surface-lighten-2;
+}
+
+.backend-status.-ready {
+    border: round $success;
+}
+
+.backend-status.-error {
+    border: round $error;
+}
+
+.backend-progress {
+    margin-top: 1;
+}
+
+.backend-detail {
+    height: auto;
+    max-height: 10;
+    overflow-y: auto;
+}
 
 /* --------------------------------------------------
    General controls

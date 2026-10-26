@@ -1,0 +1,53 @@
+{
+  "_entry_schema": {
+    "test_code": "int - matches case value in MCU firmware switch/dispatch",
+    "test_name": "string - human readable, used in logs/results only",
+    "function_slot": "string - one of: main, i2c_write, i2c_read, uart_read, uart_write",
+    "execution_order": "int - lower runs first; ties broken by test_code",
+    "fault_injection": "bool - whether the Pico should be told to misbehave during this test"
+  },
+  "tests": [
+    {
+      "test_code": 1,
+      "test_name": "i2c_write_valid_register",
+      "function_slot": "i2c_write",
+      "execution_order": 1,
+      "fault_injection": false
+    },
+    {
+      "test_code": 2,
+      "test_name": "i2c_read_valid_register",
+      "function_slot": "i2c_read",
+      "execution_order": 2,
+      "fault_injection": false
+    },
+    {
+      "test_code": 3,
+      "test_name": "i2c_read_during_fault_injection",
+      "function_slot": "i2c_read",
+      "execution_order": 3,
+      "fault_injection": true
+    },
+    {
+      "test_code": 4,
+      "test_name": "uart_write_status_report",
+      "function_slot": "uart_write",
+      "execution_order": 4,
+      "fault_injection": false
+    },
+    {
+      "test_code": 5,
+      "test_name": "uart_read_host_command",
+      "function_slot": "uart_read",
+      "execution_order": 5,
+      "fault_injection": false
+    },
+    {
+      "test_code": 6,
+      "test_name": "main_full_sequence_integration",
+      "function_slot": "main",
+      "execution_order": 6,
+      "fault_injection": false
+    }
+  ]
+}
