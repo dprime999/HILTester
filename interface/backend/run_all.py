@@ -6,6 +6,7 @@ launched unchanged to preserve their state format and behavior.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -208,7 +209,18 @@ def do_deploy(args, project: str, repo: str) -> None:
     opts = ["--repo", repo]
     if args.branch:
         opts += ["--branch", args.branch]
-    if args.image:
+    release_root = ROOT.parent.parent
+    manifest_path = release_root / "release.json"
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        image_info = manifest["runner_image"]
+        archive = (release_root / image_info["archive"]).resolve()
+        if not archive.is_relative_to(release_root.resolve()) or not archive.is_file():
+            raise BackendError("missing or unsafe bundled release image archive")
+        opts += ["--image", image_info["reference"], "--image-archive", str(archive),
+                 "--image-sha256", image_info["sha256"]]
+        say(f"[Release] Using bundled image: {image_info['reference']}")
+    elif args.image:
         opts += ["--image", args.image]
     step(project, "deploy", "running", repo=repo)
     say("[Deploy] Preparing Docker, syncing repository on Pi and registering runner...")
@@ -221,46 +233,93 @@ def do_deploy(args, project: str, repo: str) -> None:
 
 
 def do_test(args, project: str, repo: str) -> None:
+    """Dispatch firmware test; once on failure, use GitHub's Re-run all jobs API.
+
+    A rerun is a new attempt of the same workflow run. It can reflash hardware,
+    so it is never requested after success and is limited to one additional attempt.
+    """
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:
         raise BackendError("GITHUB_TOKEN is required for workflow dispatch/report")
-    branch = args.branch or (load_state(project, "deploy_state").get("branch")) or "main"
+    branch = args.branch or load_state(project, "deploy_state").get("branch") or "main"
     workflow = quote(args.workflow, safe="")
     prefix = f"/repos/{repo}"
-    # Explicitly scheduled workflow_dispatch; do not modify C source automatically.
     current = api_json(prefix + f"/actions/workflows/{workflow}/runs?per_page=30", token)
     known = {run["id"] for run in current.get("workflow_runs", [])}
     say(f"[Test] Triggering {args.workflow} on {branch}. Hardware flashing may occur.")
     api_json(prefix + f"/actions/workflows/{workflow}/dispatches", token, "POST", {"ref": branch})
     step(project, "test", "running", workflow=args.workflow)
-    deadline = time.monotonic() + max(1, args.wait_minutes) * 60
     run_id = None
+    deadline = time.monotonic() + max(1, args.wait_minutes) * 60
+    retries = 0
+    waiting_for_attempt = None
+
     while time.monotonic() < deadline:
-        data = api_json(prefix + f"/actions/workflows/{workflow}/runs?per_page=30", token)
         if run_id is None:
+            data = api_json(prefix + f"/actions/workflows/{workflow}/runs?per_page=30", token)
             candidate = next((r for r in data.get("workflow_runs", [])
-                              if r.get("event") == "workflow_dispatch" and r.get("head_branch") == branch
+                              if r.get("event") == "workflow_dispatch"
+                              and r.get("head_branch") == branch
                               and r.get("id") not in known), None)
             if candidate:
                 run_id = candidate["id"]
                 say(f"[Test] Run #{candidate.get('run_number')} started: {candidate.get('html_url')}")
-        if run_id:
+
+        if run_id is not None:
             run = api_json(prefix + f"/actions/runs/{run_id}", token)
+            attempt = int(run.get("run_attempt") or 1)
+            if waiting_for_attempt is not None:
+                # GitHub may briefly return the previous attempt's completed
+                # status immediately after accepting the re-run request.
+                if attempt < waiting_for_attempt:
+                    time.sleep(15)
+                    continue
+                waiting_for_attempt = None
+                say(f"[Test] Re-run attempt {attempt} started.")
+
             if run.get("status") == "completed":
                 conclusion = run.get("conclusion")
-                step(project, "test", "complete" if conclusion == "success" else "failed",
-                     conclusion=conclusion, url=run.get("html_url"), run_id=run_id)
-                say(f"[Test] GitHub Actions: {conclusion}. {run.get('html_url')}")
-                if conclusion != "success":
-                    jobs = api_json(prefix + f"/actions/runs/{run_id}/jobs?per_page=100", token)
-                    for job in jobs.get("jobs", []):
-                        for item in job.get("steps", []):
-                            if item.get("conclusion") == "failure":
-                                say(f"  Failed: {job.get('name')} / {item.get('name')}")
-                    raise BackendError("GitHub Actions test failed; inspect linked run logs")
-                return
+                url = run.get("html_url")
+                say(f"[Test] GitHub Actions attempt {attempt}: {conclusion}. {url}")
+                if conclusion == "success":
+                    step(project, "test", "complete", conclusion=conclusion,
+                         url=url, run_id=run_id, attempts=attempt)
+                    return
+
+                jobs = api_json(prefix + f"/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100", token)
+                for job in jobs.get("jobs", []):
+                    for item in job.get("steps", []):
+                        if item.get("conclusion") == "failure":
+                            say(f"  Failed: {job.get('name')} / {item.get('name')}")
+
+                if conclusion == "failure" and retries == 0:
+                    # Same GitHub action as clicking "Re-run all jobs" in the UI.
+                    # The initial preflight already authorized hardware flashing.
+                    say("[Test] First attempt failed; requesting Re-run all jobs once.")
+                    try:
+                        api_json(prefix + f"/actions/runs/{run_id}/rerun", token, "POST")
+                    except BackendError as exc:
+                        step(project, "test", "failed", conclusion=conclusion,
+                             url=url, run_id=run_id, rerun_error=str(exc))
+                        raise BackendError(f"Re-run all jobs request failed: {exc}") from exc
+                    retries = 1
+                    waiting_for_attempt = attempt + 1
+                    # Each attempt gets the usual wait budget; do not issue a
+                    # second re-run even if this next attempt also fails.
+                    deadline = time.monotonic() + max(1, args.wait_minutes) * 60
+                    step(project, "test", "retrying", url=url, run_id=run_id,
+                         expected_attempt=waiting_for_attempt)
+                    time.sleep(15)
+                    continue
+
+                step(project, "test", "failed", conclusion=conclusion,
+                     url=url, run_id=run_id, attempts=attempt)
+                raise BackendError("GitHub Actions test failed; inspect linked run logs")
         time.sleep(15)
-    raise BackendError("GitHub Actions wait timed out; check the Actions page for ongoing results")
+
+    step(project, "test", "timed_out", run_id=run_id,
+         message="Run may still be queued or executing; no rerun requested")
+    raise BackendError("GitHub Actions wait timed out; run may still be active. Check Actions before retrying")
 
 
 def clone_local(args, project: str, repo: str) -> None:

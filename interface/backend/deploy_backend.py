@@ -6,6 +6,8 @@ No image compilation takes place during deployment.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import gzip
 import json
 import os
 import re
@@ -114,12 +116,15 @@ def compose_locator(workspace: str, choice: str | None) -> str:
 
 
 def provision_script(repo: str, branch: str, image: str, name: str, labels: str, token: str,
-                     compose_file: str | None, workspace: str) -> str:
+                     compose_file: str | None, workspace: str, offline: bool = False) -> str:
     # Token never appears in the SSH command line, state JSON, or remote Git URL.
     # Root-owned .env is required by the current entrypoint, which requests a fresh
     # runner-registration token when the container starts.
     q = quoted
     locator = compose_locator(workspace, compose_file)
+    image_action = ("printf '[pi] using preloaded release image\\n'\n"
+                    if offline else "docker compose --env-file \"$runtime/runner.env\" -f \"$candidate\" -f \"$runtime/image-override.yml\" pull")
+    up_action = "docker compose --env-file \"$runtime/runner.env\" -f \"$candidate\" -f \"$runtime/image-override.yml\" up -d --no-build" + (" --pull never" if offline else "")
     return f'''set -Eeuo pipefail
 sudo -n true || {{ echo "Passwordless sudo required for initial Docker setup" >&2; exit 3; }}
 sudo -n bash -se <<'HIL_ROOT_PROVISION'
@@ -190,18 +195,51 @@ cat > "$runtime/image-override.yml" <<'HIL_RUNTIME_OVERRIDE'
 services:
   github-runner:
     image: {image}
+    pull_policy: {"never" if offline else "missing"}
 HIL_RUNTIME_OVERRIDE
 chmod 600 "$runtime/image-override.yml"
 {locator}
-printf '[pi] pulling published ARM64 runner image\\n'
+printf '[pi] preparing runner image\\n'
 cd "$workspace"
 docker compose --env-file "$runtime/runner.env" -f "$candidate" -f "$runtime/image-override.yml" config --quiet
-docker compose --env-file "$runtime/runner.env" -f "$candidate" -f "$runtime/image-override.yml" pull
-docker compose --env-file "$runtime/runner.env" -f "$candidate" -f "$runtime/image-override.yml" up -d --no-build
+{image_action}
+{up_action}
 printf '[pi] container status\\n'
 docker compose --env-file "$runtime/runner.env" -f "$candidate" -f "$runtime/image-override.yml" ps --format json
 HIL_ROOT_PROVISION
 '''
+
+
+def load_offline_image(project: str, net: dict, archive: Path, image: str, expected_sha256: str | None) -> str:
+    """Stream compressed Docker archive PC -> Pi over SSH (no remote GHCR)."""
+    if not archive.is_file():
+        raise BackendError(f"release Docker image archive missing: {archive}")
+    if expected_sha256:
+        digest = hashlib.sha256()
+        with archive.open("rb") as f:
+            for block in iter(lambda: f.read(1024 * 1024), b""):
+                digest.update(block)
+        if digest.hexdigest() != expected_sha256:
+            raise BackendError("offline image SHA256 mismatch; refusing load")
+    check = remote(project, net, "sudo -n docker image inspect " + quoted(image) + " >/dev/null 2>&1 && echo PRESENT || true", timeout=45)
+    if check.strip() == "PRESENT":
+        info("image", "image already cached on Pi; skipping transfer")
+        return "cached"
+    info("image", f"streaming {archive.stat().st_size / 1024**2:.1f} MiB compressed image to Pi")
+    cmd = ssh_argv(project, net["tailscale_ip"], net["ssh_user"], int(net.get("ssh_port", 22)),
+                   "gzip -dc | sudo -n docker load")
+    # Linux/Windows subprocess binary streaming: no file upload or shell pipeline on PC.
+    try:
+        with archive.open("rb") as f:
+            result = subprocess.run(cmd, stdin=f, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1800)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise BackendError(f"offline image transfer failed: {exc}") from exc
+    if result.returncode:
+        raise BackendError("offline Docker load failed: " + result.stderr.decode("utf-8", "replace")[-1200:])
+    verify = remote(project, net, "sudo -n docker image inspect " + quoted(image) + " >/dev/null && echo READY", timeout=45)
+    if verify.strip() != "READY":
+        raise BackendError("loaded Docker archive does not contain the release image tag")
+    return "loaded"
 
 
 def check_runner(project: str, net: dict, repo: str, token: str, name: str, seconds: int) -> dict:
@@ -221,7 +259,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--project", required=True, help="local project/state name")
     p.add_argument("--repo", required=True, help="user's GitHub owner/repo, e.g. dprime999/HILStarter")
     p.add_argument("--branch", help="branch; defaults to GitHub default branch")
-    p.add_argument("--image", default=DEFAULT_IMAGE, help="prebuilt ARM64 GHCR image (default HILTester runner)")
+    p.add_argument("--image", default=DEFAULT_IMAGE, help="runner image reference")
+    p.add_argument("--image-archive", help="local .tar.gz Docker save archive; disables GHCR pulls")
+    p.add_argument("--image-sha256", help="expected SHA256 of image archive")
     p.add_argument("--token-env", default="GITHUB_TOKEN", help="environment variable with GitHub token")
     p.add_argument("--workspace", help="absolute Pi path; default /opt/hiltester/<repo>")
     p.add_argument("--compose-file", help="relative path to Compose file when multiple are present")
@@ -238,6 +278,8 @@ def main() -> int:
     repo = parse_repo(args.repo)
     if not IMAGE_RE.fullmatch(args.image):
         raise BackendError("invalid Docker image reference")
+    if args.image_archive and not Path(args.image_archive).is_file():
+        raise BackendError("bundled Docker archive not found")
     if args.branch and (not BRANCH_RE.fullmatch(args.branch) or ".." in args.branch):
         raise BackendError("invalid --branch")
     net = load_state(args.project, "network_state")
@@ -263,7 +305,7 @@ def main() -> int:
              "host": net["tailscale_ip"], "token_persisted_in_local_state": False,
              "remote_runtime_credentials": "/etc/hiltester/runner.env (root-only)", "results": []}
     if args.dry_run:
-        state["planned_steps"] = ["check GitHub repo and runner registration permissions", "SSH over Tailscale", "install Git/curl/Docker/Compose if missing", "clone or sync repo ON THE PI", "write root-only runner credentials", "pull selected ARM64 image", "start Compose", "verify GitHub runner online"]
+        state["planned_steps"] = ["check GitHub repo and runner registration permissions", "SSH over Tailscale", "install Git/curl/Docker/Compose if missing", "clone or sync repo ON THE PI", "write root-only runner credentials", "load bundled ARM64 image" if args.image_archive else "pull selected ARM64 image", "start Compose", "verify GitHub runner online"]
         print_json(state)
         return 0
     try:
@@ -279,7 +321,11 @@ def main() -> int:
         state["status"] = "deploying"
         save_state(args.project, "deploy_state", state)
         info("ssh", "installing/verifying Docker and downloading project on Pi")
-        script = provision_script(repo, branch, args.image, name, labels, token, args.compose_file, workspace)
+        if args.image_archive:
+            # Docker must exist before `docker load` is available.
+            remote(project, net, "sudo -n bash -se <<'HIL_BOOTSTRAP_DOCKER'\nset -euo pipefail\nif ! command -v docker >/dev/null; then curl -fsSL https://get.docker.com -o /tmp/hiltester-docker.sh; sh /tmp/hiltester-docker.sh; rm -f /tmp/hiltester-docker.sh; fi\nsystemctl enable --now docker\ndocker info >/dev/null\nHIL_BOOTSTRAP_DOCKER", timeout=1200)
+            state["image_source"] = load_offline_image(project, net, Path(args.image_archive), args.image, args.image_sha256)
+        script = provision_script(repo, branch, args.image, name, labels, token, args.compose_file, workspace, offline=bool(args.image_archive))
         output = remote(args.project, net, script, timeout=1800, secret=token)
         state["results"].append({"stage": "pi_deploy", "stdout_tail": output[-1200:]})
         save_state(args.project, "deploy_state", state)

@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - docker-HILTester
+    paths:
+      - 'blink/blink.c'
+      - 'blink2/Core/Src/main.c'
 
   # Also allows you to start it manually from the Actions page.
   workflow_dispatch:

@@ -257,81 +257,87 @@ def _archive_files(archive: Path) -> list[tuple[str, bytes]]:
 
 def init_repository(repo: str, branch: str | None, archive: Path, token: str,
                     dry_run: bool = False) -> dict:
-    """Upload starter files via GitHub REST API; does not clone or use local git."""
+    """Initialize starter with exactly one Git commit and one branch update.
+
+    Preserves existing files except root README.md. Requires git on the PC.
+    No credential is stored in repository remotes or local state.
+    """
     owner, name = _github_repo_parts(repo)
     prefix = f'/repos/{quote(owner)}/{quote(name)}'
-    progress('upload', 0, 1)
     info = _github_request('GET', prefix, token)
     if info.get('archived') or info.get('disabled'):
         raise BackendError('repository is archived or disabled')
-    default_branch = info.get('default_branch') or 'main'
-    selected = branch or default_branch
-    if selected != default_branch:
-        raise BackendError('initializing an empty repository requires its default branch: ' + default_branch)
+    selected = branch or info.get('default_branch') or 'main'
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*', selected) or '..' in selected:
+        raise BackendError('unsupported branch name')
+    files = _archive_files(archive)
+    if not shutil.which('git'):
+        raise BackendError('git executable required for atomic starter initialization')
+
+    # Read branch metadata. 404 is expected for a completely empty repository.
+    import urllib.error
     branches = _github_request('GET', prefix + '/branches?per_page=100', token)
     if not isinstance(branches, list):
-        raise BackendError('GitHub returned an unexpected branches response')
+        raise BackendError('unexpected GitHub branches response')
     branch_exists = any(item.get('name') == selected for item in branches)
     if branches and not branch_exists:
-        raise BackendError(f'default branch {selected!r} was not found')
-    files = _archive_files(archive)
+        raise BackendError('requested branch does not exist; refusing to create a new branch')
 
-    # Preserve existing files except a root README.md, which the starter may replace.
-    # Contents API requires the existing blob SHA for that replacement.
-    conflicts = []
-    replace_sha = {}
-    if branch_exists:
-        # Git Trees API returns paths recursively in one call (no local clone).
-        ref = _github_request('GET', prefix + '/git/ref/heads/' + quote(selected, safe=''), token)
-        sha = ref['object']['sha']
-        commit = _github_request('GET', prefix + '/git/commits/' + sha, token)
-        tree_sha = commit['tree']['sha']
-        if tree_sha == EMPTY_GIT_TREE_SHA:
-            # A repository cleared by clean.py still has a main branch and a
-            # commit, but no tracked files. The empty tree need not be fetched.
-            existing = {}
+    with tempfile.TemporaryDirectory(prefix='hiltester-init-') as temp:
+        work = Path(temp) / 'checkout'
+        work.mkdir()
+        helper = Path(temp) / 'askpass.sh'
+        helper.write_text('#!/bin/sh\ncase "$1" in *Username*) printf %s x-access-token ;; *) printf %s "$HIL_GIT_TOKEN" ;; esac\n', encoding='utf-8')
+        helper.chmod(0o700)
+        env = dict(os.environ, GIT_TERMINAL_PROMPT='0', GIT_ASKPASS=str(helper), HIL_GIT_TOKEN=token)
+        url = f'https://github.com/{owner}/{name}.git'
+        def git(*args):
+            proc = subprocess.run(['git', *args], cwd=work, env=env, capture_output=True,
+                                  text=True, timeout=180)
+            if proc.returncode:
+                raise BackendError('git starter init failed: ' + proc.stderr[-800:].replace(token, '[REDACTED]'))
+            return proc.stdout.strip()
+        if branch_exists:
+            git('init', '-q')
+            git('remote', 'add', 'origin', url)
+            git('fetch', '-q', '--depth', '1', 'origin', selected)
+            git('checkout', '-q', '-b', selected, 'FETCH_HEAD')
         else:
-            tree = _github_request('GET', prefix + '/git/trees/' + tree_sha + '?recursive=1', token)
-            if tree.get('truncated'):
-                raise BackendError('repository tree is too large to check safely; refusing initialization')
-            existing = {item['path']: item for item in tree.get('tree', [])}
-        for path, _ in files:
-            parts = path.split('/')
-            if path == 'README.md' and path in existing and existing[path].get('type') == 'blob':
-                replace_sha[path] = existing[path]['sha']
-                continue
-            if path in existing or any((existing.get('/'.join(parts[:i])) is not None and existing['/'.join(parts[:i])].get('type') != 'tree') for i in range(1, len(parts))):
-                conflicts.append(path)
-        # A starter file must not replace an existing directory either.
+            git('init', '-q', '-b', selected)
+            git('remote', 'add', 'origin', url)
+        conflicts = []
+        replacements = []
+        for name_in_tar, content in files:
+            destination = work.joinpath(*PurePosixPath(name_in_tar).parts)
+            if destination.exists():
+                if name_in_tar != 'README.md' or not destination.is_file():
+                    conflicts.append(name_in_tar)
+                else:
+                    replacements.append(name_in_tar)
+            if any(parent.is_file() for parent in destination.parents if parent != work):
+                conflicts.append(name_in_tar)
         if conflicts:
-            raise BackendError('starter conflicts with existing repository paths (no files changed): '
-                               + ', '.join(conflicts[:12])
-                               + (' ...' if len(conflicts) > 12 else ''))
-    if dry_run:
-        progress('upload', 1, 1)
-        return {'status': 'ready_to_upload', 'repo': f'{owner}/{name}', 'branch': selected,
-                'files': len(files), 'archive': str(archive), 'no_clone': True,
-                'branch_exists': branch_exists, 'conflicts': [],
-                'readme_replacements': list(replace_sha)}
-    # First upload creates the initial branch on completely empty GitHub repos.
-    # When main exists, every upload explicitly targets it.
-    # Put README last so a failure on other files leaves the original README intact.
-    files.sort(key=lambda item: item[0] == 'README.md')
-    for i, (path, content) in enumerate(files, 1):
-        endpoint = prefix + '/contents/' + '/'.join(quote(part, safe='') for part in path.split('/'))
-        payload = {'message': f'Initialize HILTester starter: {path}',
-                   'content': base64.b64encode(content).decode('ascii')}
-        if branch_exists or i > 1:
-            payload['branch'] = selected
-        if path in replace_sha:
-            payload['sha'] = replace_sha[path]
-        _github_request('PUT', endpoint, token, payload)
-        if i == 1 or i % 5 == 0 or i == len(files):
-            progress('upload', i, len(files))
-    return {'status': 'uploaded', 'repo': f'{owner}/{name}', 'branch': selected,
-            'files': len(files), 'no_clone': True, 'previous_branch_exists': branch_exists,
-            'readme_replacements': list(replace_sha),
-            'note': 'Direct GitHub API upload; existing non-README files preserved'}
+            raise BackendError('starter conflicts with existing paths: ' + ', '.join(sorted(set(conflicts))[:12]))
+        if dry_run:
+            return {'status': 'ready_to_upload', 'repo': f'{owner}/{name}', 'branch': selected,
+                    'files': len(files), 'branch_exists': branch_exists, 'conflicts': [],
+                    'readme_replacements': replacements, 'commits_planned': 1}
+        for index, (name_in_tar, content) in enumerate(files, 1):
+            destination = work.joinpath(*PurePosixPath(name_in_tar).parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+            if index == 1 or index % 25 == 0 or index == len(files):
+                progress('stage', index, len(files))
+        git('add', '--', *[path for path, _ in files])
+        if not git('diff', '--cached', '--name-only'):
+            return {'status': 'unchanged', 'repo': f'{owner}/{name}', 'branch': selected,
+                    'files': len(files), 'commits_created': 0}
+        git('-c', 'user.name=HILTester', '-c', 'user.email=hiltester@users.noreply.github.com',
+            'commit', '-q', '-m', 'Initialize HILTester starter')
+        git('push', '-q', 'origin', f'HEAD:refs/heads/{selected}')
+        return {'status': 'uploaded', 'repo': f'{owner}/{name}', 'branch': selected,
+                'files': len(files), 'commits_created': 1, 'no_clone': True,
+                'readme_replacements': replacements}
 
 
 def parser() -> argparse.ArgumentParser:
